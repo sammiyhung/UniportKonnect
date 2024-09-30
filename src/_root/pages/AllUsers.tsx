@@ -16,10 +16,10 @@ const AllUsers = () => {
   }
 
   // Filter the users based on the search query
-  const filteredUsers = creators?.documents.filter((creator) =>
+  const filteredUsers = creators?.documents?.filter((creator) =>
     creator?.username?.toLowerCase().includes(searchQuery.toLowerCase()) || 
     creator?.name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  ) || [];
 
   return (
     <div className="common-container">

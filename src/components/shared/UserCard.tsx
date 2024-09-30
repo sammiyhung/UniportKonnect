@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
 import { Models } from 'appwrite';
 import { Link, useNavigate } from 'react-router-dom'; // Import useNavigate
-import { getCurrentUser } from '@/lib/appwrite/api'; // Assuming you're using an API call to get the current user
+
 import { Button } from '../ui/button'; // Assuming you have a Button component
 
 type UserCardProps = {
@@ -9,23 +8,7 @@ type UserCardProps = {
 };
 
 const UserCard = ({ user }: UserCardProps) => {
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const navigate = useNavigate(); // Initialize useNavigate for programmatic navigation
-
-  // Fetch current user ID
-  useEffect(() => {
-    const fetchCurrentUser = async () => {
-      try {
-        const currentUser = await getCurrentUser();
-        if (currentUser) {
-          setCurrentUserId(currentUser.$id);
-        }
-      } catch (error) {
-        console.error('Error fetching current user:', error);
-      }
-    };
-    fetchCurrentUser();
-  }, []);
 
   return (
     <div className="user-card flex flex-col items-center justify-center p-4 border rounded-lg shadow-md">

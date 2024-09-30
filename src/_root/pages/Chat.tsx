@@ -11,7 +11,6 @@ const Chat = () => {
   const [newMessage, setNewMessage] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [chatPartner, setChatPartner] = useState<Models.Document | null>(null);
-  const [isTyping, setIsTyping] = useState(false);
   
   // States for Search Functionality
   const [searchQuery, setSearchQuery] = useState('');
@@ -83,13 +82,18 @@ const Chat = () => {
   const handleSendMessage = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (newMessage.trim() && currentUserId && userId) {
-      await sendMessage(currentUserId, userId, newMessage);
-      setNewMessage('');
-      const updatedMessages = await fetchMessages(currentUserId, userId);
-      setMessages(updatedMessages);
-      scrollToBottom();
+      try {
+        await sendMessage(currentUserId, userId, newMessage);
+        setNewMessage('');
+        const updatedMessages = await fetchMessages(currentUserId, userId);
+        setMessages(updatedMessages);
+        scrollToBottom();
+      } catch (error) {
+        console.error('Error sending message:', error);
+      }
     }
   };
+
 
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
@@ -336,7 +340,7 @@ const Chat = () => {
             key={message.$id} 
             className={`message-item m-2 ${message.senderId === currentUserId ? 'text-right' : 'text-left'}`}
           >
-            <div className={`inline-block px-4 py-2 rounded-lg ${message.senderId === currentUserId ? 'bg-pink-500 text-white max-w-md' : 'bg-gray-200 text-gray-800 max-w-m'}`}>
+            <div className={`inline-block px-4 py-2 rounded-lg ${message.senderId === currentUserId ? 'bg-pink-500 text-white max-w-md' : 'bg-gray-200 text-gray-800 max-w-md'}`}>
               <p>{renderMessageContent(message.content)}</p>
             </div>
             <small className="block text-xs text-gray-500 mt-1">
