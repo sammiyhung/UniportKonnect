@@ -3,6 +3,11 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { sendMessage, fetchMessages, getChatPartner } from './ChatService'; 
 import { getCurrentUser } from '@/lib/appwrite/api';
 import { Models } from 'appwrite';
+import TypingIndicator from './TypingIndicator';
+
+import io, { Socket } from 'socket.io-client'; // Import Socket.io client
+
+const SOCKET_SERVER_URL = 'http://localhost:5000';
 
 const Chat = () => {
   const { userId } = useParams(); 
@@ -11,6 +16,10 @@ const Chat = () => {
   const [newMessage, setNewMessage] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [chatPartner, setChatPartner] = useState<Models.Document | null>(null);
+
+  const [isTyping, setIsTyping] = useState(false); // State to track typing status
+  const socketRef = useRef<Socket | null>(null); // Ref to store socket instance
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref for typing timeout
   
   // States for Search Functionality
   const [searchQuery, setSearchQuery] = useState('');
@@ -82,11 +91,27 @@ const Chat = () => {
   const handleSendMessage = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (newMessage.trim() && currentUserId && userId) {
+      const messageContent = newMessage.trim();
       try {
-        await sendMessage(currentUserId, userId, newMessage);
+        // Emit the message through Socket.io
+        socketRef.current?.emit('sendMessage', {
+          senderId: currentUserId,
+          receiverId: userId,
+          message: messageContent,
+        });
+
+        // Optionally, add the message to local state immediately
+        setMessages((prevMessages) => [
+          ...prevMessages,
+          {
+            senderId: currentUserId,
+            content: messageContent,
+            timestamp: new Date(),
+            $id: `msg-${Date.now()}`, // Generate a unique ID or use server-generated IDs
+          },
+        ]);
+
         setNewMessage('');
-        const updatedMessages = await fetchMessages(currentUserId, userId);
-        setMessages(updatedMessages);
         scrollToBottom();
       } catch (error) {
         console.error('Error sending message:', error);
@@ -94,6 +119,69 @@ const Chat = () => {
     }
   };
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewMessage(e.target.value);
+
+    if (socketRef.current && currentUserId && userId) {
+      socketRef.current.emit('typing', {
+        senderId: currentUserId,
+        receiverId: userId,
+      });
+
+      // Clear previous timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      // Set a timeout to reset typing indicator after 3 seconds of inactivity
+      typingTimeoutRef.current = setTimeout(() => {
+        setIsTyping(false);
+      }, 3000);
+    }
+  };
+
+
+  useEffect(() => {
+    // Initialize Socket.io
+    socketRef.current = io(SOCKET_SERVER_URL, {
+      transports: ['websocket'], // Optional: specify transports
+    });
+
+    // Once socket is connected, emit 'join' event with currentUserId
+    if (currentUserId) {
+      socketRef.current.emit('join', currentUserId);
+    }
+
+    // Listen for incoming messages
+    socketRef.current.on('receiveMessage', (messageData: any) => {
+      setMessages((prevMessages) => [...prevMessages, {
+        senderId: messageData.senderId,
+        content: messageData.message,
+        timestamp: messageData.timestamp,
+        $id: `msg-${Date.now()}`, // Generate a unique ID or use server-generated IDs
+      }]);
+      scrollToBottom();
+    });
+
+    // Listen for typing indicators
+    socketRef.current.on('typing', (data: { senderId: string }) => {
+      if (data.senderId !== currentUserId) {
+        setIsTyping(true);
+        // Hide typing indicator after 3 seconds of inactivity
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+          setIsTyping(false);
+        }, 3000);
+      }
+    });
+
+    // Cleanup on unmount
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, [currentUserId]);
 
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
@@ -173,26 +261,26 @@ const Chat = () => {
   };
 
   return (
-    <div className="chat-page-container h-screen flex flex-col justify-between w-full">
+    <div className="chat-page-container h-full flex flex-col justify-between w-full sm:overflow-x-hidden sm:overflow-y-hidden">
       {/* Header/Top Bar */}
-      <div className="chat-header bg-gray-900 flex items-center justify-between p-4 shadow-md relative">
+      <div className="chat-header bg-gray-900 flex items-center justify-between p-2 shadow-md relative">
         <div className="flex items-center">
-          <button onClick={() => navigate(-1)} className="back-button mr-4">
+          <button onClick={() => navigate(-1)} className="back-button mr-2">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
           <Link to={`/profile/${chatPartner?.$id}`} className="flex items-center">
-            <img src={chatPartner?.imageUrl || '/assets/icons/profile-placeholder.svg'} alt="Avatar" className="h-10 w-10 rounded-full mr-4" />
+            <img src={chatPartner?.imageUrl || '/assets/icons/profile-placeholder.svg'} alt="Avatar" className="h-10 w-10 rounded-full mr-2" />
             <div>
-              <p className="font-bold text-lg text-white">{chatPartner?.name || 'Loading...'}</p>
+              <p className="font-bold text-md text-white">{chatPartner?.name || 'Loading...'}</p>
               <p className="text-sm text-gray-400">@{chatPartner?.username || 'Loading...'}</p>
             </div>
           </Link>
         </div>
 
         {/* Search and Icon Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           {/* Search Bar for Large Screens */}
           <div className="hidden lg:flex relative">
             <input
@@ -200,7 +288,7 @@ const Chat = () => {
               value={searchQuery}
               onChange={handleSearch}
               placeholder="Search Chat"
-              className="px-2 py-1 text-white rounded-md border border-gray-300 focus:outline-none focus:bg-gray-800 bg-gray-700"
+              className="px-1 py-1 text-white rounded-md border border-gray-300 focus:outline-none focus:bg-gray-800 bg-gray-700"
             />
             {searchQuery && (
               <div className="absolute right-10 top-1 flex flex-col">
@@ -216,7 +304,7 @@ const Chat = () => {
 
           {/* Search Button for Small Screens */}
           <button 
-            className="lg:hidden p-2 rounded-full hover:bg-gray-800 focus:outline-none"
+            className="lg:hidden p-1 rounded-full hover:bg-gray-800 focus:outline-none"
             onClick={() => setIsSearchActive(!isSearchActive)}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" className="h-6 w-6 text-gray-400" fill="gray">
@@ -254,7 +342,7 @@ const Chat = () => {
 
           {/* Notifications Button */}
           <button 
-            className="p-2 rounded-full hover:bg-gray-800 focus:outline-none relative"
+            className="p-2 rounded-full hover:bg-gray-800 focus:outline-none relative hidden md:block"
             onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -280,7 +368,7 @@ const Chat = () => {
 
           {/* Help Button */}
           <button 
-            className="p-2 hover:bg-gray-800 focus:outline-none relative"
+            className="p-2 hover:bg-gray-800 focus:outline-none relative rounded-full hidden md:block"
             onClick={() => setIsHelpOpen(!isHelpOpen)}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" className="h-6 w-6 text-gray-400" fill="gray">
@@ -305,8 +393,8 @@ const Chat = () => {
             className="p-2 rounded-full hover:bg-gray-800 focus:outline-none relative"
             onClick={() => setIsSettingsOpen(!isSettingsOpen)}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="gray" width="24" height="24" viewBox="0 0 24 24" stroke="currentColor">
-              <path d="M24 13.616v-3.232c-1.651-.587-2.694-.752-3.219-2.019v-.001c-.527-1.271.1-2.134.847-3.707l-2.285-2.285c-1.561.742-2.433 1.375-3.707.847h-.001c-1.269-.526-1.435-1.576-2.019-3.219h-3.232c-.582 1.635-.749 2.692-2.019 3.219h-.001c-1.271.528-2.132-.098-3.707-.847l-2.285 2.285c.745 1.568 1.375 2.434.847 3.707-.527 1.271-1.584 1.438-3.219 2.02v3.232c1.632.58 2.692.749 3.219 2.019.53 1.282-.114 2.166-.847 3.707l2.285 2.286c1.562-.743 2.434-1.375 3.707-.847h.001c1.27.526 1.436 1.579 2.019 3.219h3.232c.582-1.636.75-2.69 2.027-3.222h.001c1.262-.524 2.12.101 3.698.851l2.285-2.286c-.744-1.563-1.375-2.433-.848-3.706.527-1.271 1.588-1.44 3.221-2.021zm-12 2.384c-2.209 0-4-1.791-4-4s1.791-4 4-4 4 1.791 4 4-1.791 4-4 4z"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" className="h-6 w-6 text-gray-400" fill="gray">
+              <path d="M19 18c0 1.104-.896 2-2 2s-2-.896-2-2 .896-2 2-2 2 .896 2 2zm-14-3c-1.654 0-3 1.346-3 3s1.346 3 3 3h14c1.654 0 3-1.346 3-3s-1.346-3-3-3h-14zm19 3c0 2.761-2.239 5-5 5h-14c-2.761 0-5-2.239-5-5s2.239-5 5-5h14c2.761 0 5 2.239 5 5zm0-12c0 2.761-2.239 5-5 5h-14c-2.761 0-5-2.239-5-5s2.239-5 5-5h14c2.761 0 5 2.239 5 5zm-15 0c0-1.104-.896-2-2-2s-2 .896-2 2 .896 2 2 2 2-.896 2-2z"/>
             </svg>
             {/* Settings Overlay */}
             {isSettingsOpen && (
@@ -348,24 +436,42 @@ const Chat = () => {
             </small>
           </div>
         ))}
+
+        {/* Typing Indicator */}
+        {isTyping && (
+          <div className="message-item m-2 text-left">
+            <div className="inline-block px-4 py-2 rounded-lg bg-gray-200 text-gray-800 max-w-md">
+              <TypingIndicator />
+            </div>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Scroll to Last Message Arrow */}
       <button 
-        ref={lastMessageRef} 
-        className="absolute bottom-24 right-6 bg-gray-800 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 transition duration-300 hidden"
+        ref={lastMessageRef}
+        className="fixed bottom-[5rem] right-1/2 translate-x-1/2 bg-gray-800 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 transition duration-300"
         onClick={scrollToBottom}
       >
-        ↓
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="white"
+        >
+          <path d="M11.998 2c5.517 0 9.997 4.48 9.997 9.998 0 5.517-4.48 9.997-9.997 9.997-5.518 0-9.998-4.48-9.998-9.997 0-5.518 4.48-9.998 9.998-9.998zm4.843 8.211c.108-.141.157-.3.157-.456 0-.389-.306-.755-.749-.755h-8.501c-.445 0-.75.367-.75.755 0 .157.05.316.159.457 1.203 1.554 3.252 4.199 4.258 5.498.142.184.36.29.592.29.23 0 .449-.107.591-.291z"/>
+        </svg>
       </button>
+
 
       {/* Message input form */}
       <form onSubmit={handleSendMessage} className="message-input-form p-4 bg-gray-900 flex items-center">
         <input
           type="text"
           value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
+          onChange={handleInputChange} // Use the new handler
           placeholder="Type your message..."
           className="message-input w-full p-2 text-white bg-gray-800 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-700"
         />
