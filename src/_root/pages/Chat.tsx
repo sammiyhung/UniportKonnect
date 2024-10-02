@@ -42,7 +42,8 @@ const Chat = () => {
   useEffect(() => {
     // Initialize Socket.io client
     socketRef.current = io(SOCKET_SERVER_URL, {
-      transports: ['websocket'], // Specify transports if needed
+      transports: ['websocket', 'polling'], // Specify transports if needed
+      secure: true,
     });
 
     // Once socket is connected, emit 'join' event with currentUserId

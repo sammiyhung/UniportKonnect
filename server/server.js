@@ -19,7 +19,7 @@ const server = http.createServer(app);
 // Initialize Socket.io with CORS settings
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: process.env.FRONTEND_URL, // Restrict to your frontend URL
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -108,7 +108,7 @@ app.get('/', (req, res) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT;
 server.listen(PORT, () => {
   console.log(`Socket.io server running on port ${PORT}`);
 });
