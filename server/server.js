@@ -3,25 +3,36 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-require('dotenv').config(); // Load environment variables from .env
+require('dotenv').config(); // Load environment variables
 
+// Appwrite SDK
+const { Client, Databases } = require('appwrite');
+
+// Initialize Express app
 const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Initialize HTTP server
 const server = http.createServer(app);
 
-// Retrieve FRONTEND_URL from environment variables, default to localhost for development
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-
-// Initialize Socket.io with enhanced CORS settings
+// Initialize Socket.io with CORS settings
 const io = new Server(server, {
   cors: {
-    origin: FRONTEND_URL, // Allow only your frontend URL
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173', // Restrict to your frontend URL
     methods: ['GET', 'POST'],
-    credentials: true, // Allow credentials if needed
+    credentials: true,
   },
-  // Additional Socket.io configurations can be added here
 });
 
-// In-memory user storage (consider using a database for scalability)
+// Initialize Appwrite client
+const client = new Client()
+  .setEndpoint(process.env.APPWRITE_ENDPOINT) // Your Appwrite Endpoint
+  .setProject(process.env.APPWRITE_PROJECT_ID);
+
+const databases = new Databases(client);
+
+// In-memory user storage (Consider using Redis for scalability)
 const users = {};
 
 // Socket.io connection handler
@@ -35,15 +46,36 @@ io.on('connection', (socket) => {
   });
 
   // Handle sending messages
-  socket.on('sendMessage', ({ senderId, receiverId, message }) => {
+  socket.on('sendMessage', async ({ senderId, receiverId, message }) => {
     const receiverSocketId = users[receiverId];
+    const timestamp = new Date();
+
+    // Emit the message to the receiver in real-time
     if (receiverSocketId) {
       io.to(receiverSocketId).emit('receiveMessage', {
         senderId,
         message,
-        timestamp: new Date(),
+        timestamp,
       });
-      console.log(`Message from ${senderId} to ${receiverId}: ${message}`);
+      console.log(`Real-time message from ${senderId} to ${receiverId}: ${message}`);
+    }
+
+    // Store the message in Appwrite
+    try {
+      await databases.createDocument(
+        process.env.APPWRITE_DATABASE_ID, // Your Appwrite Database ID
+        process.env.APPWRITE_COLLECTION_ID, // Your Appwrite Collection ID (e.g., 'messages')
+        ID.unique(), // Auto-generated ID
+        {
+          senderId,
+          receiverId,
+          message,
+          timestamp: timestamp.toISOString(),
+        }
+      );
+      console.log('Message stored in Appwrite');
+    } catch (error) {
+      console.error('Error storing message in Appwrite:', error);
     }
   });
 

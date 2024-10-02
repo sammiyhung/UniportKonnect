@@ -1,13 +1,14 @@
+// Chat.tsx
 import { useEffect, useState, useRef } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { sendMessage, fetchMessages, getChatPartner } from './ChatService'; 
+import { sendMessage as sendMessageToAppwrite, fetchMessages, getChatPartner } from './ChatService'; 
 import { getCurrentUser } from '@/lib/appwrite/api';
 import { Models } from 'appwrite';
-import TypingIndicator from './TypingIndicator';
+import io, { Socket } from 'socket.io-client'; // Socket.io client
+import TypingIndicator from './TypingIndicator'; // Typing indicator component
 
-import io, { Socket } from 'socket.io-client'; // Import Socket.io client
 
-const SOCKET_SERVER_URL = 'http://localhost:5000';
+const SOCKET_SERVER_URL = import.meta.env.REACT_APP_SOCKET_SERVER_URL || 'http://localhost:5000'; // Your Socket.io server URL
 
 const Chat = () => {
   const { userId } = useParams(); 
@@ -16,7 +17,6 @@ const Chat = () => {
   const [newMessage, setNewMessage] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [chatPartner, setChatPartner] = useState<Models.Document | null>(null);
-
   const [isTyping, setIsTyping] = useState(false); // State to track typing status
   const socketRef = useRef<Socket | null>(null); // Ref to store socket instance
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref for typing timeout
@@ -38,6 +38,47 @@ const Chat = () => {
   
   // Ref to track scroll position
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    // Initialize Socket.io client
+    socketRef.current = io(SOCKET_SERVER_URL, {
+      transports: ['websocket'], // Specify transports if needed
+    });
+
+    // Once socket is connected, emit 'join' event with currentUserId
+    if (currentUserId) {
+      socketRef.current.emit('join', currentUserId);
+    }
+
+    // Listen for incoming messages
+    socketRef.current.on('receiveMessage', (messageData: any) => {
+      setMessages((prevMessages) => [...prevMessages, {
+        senderId: messageData.senderId,
+        content: messageData.message,
+        timestamp: messageData.timestamp,
+        $id: `msg-${Date.now()}`, // Generate a unique ID or use server-generated IDs
+      }]);
+      scrollToBottom();
+    });
+
+    // Listen for typing indicators
+    socketRef.current.on('typing', ({ senderId }: { senderId: string }) => {
+      if (senderId !== currentUserId) {
+        setIsTyping(true);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+          setIsTyping(false);
+        }, 3000); // Hide after 3 seconds
+      }
+    });
+
+    // Cleanup on unmount
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, [currentUserId, SOCKET_SERVER_URL]);
 
   useEffect(() => {
     const fetchCurrentUser = async () => {
@@ -92,13 +133,18 @@ const Chat = () => {
     e.preventDefault();
     if (newMessage.trim() && currentUserId && userId) {
       const messageContent = newMessage.trim();
+      const timestamp = new Date().toISOString();
+
       try {
-        // Emit the message through Socket.io
+        // 1. Emit the message via Socket.io
         socketRef.current?.emit('sendMessage', {
           senderId: currentUserId,
           receiverId: userId,
           message: messageContent,
         });
+
+        // 2. Send the message to Appwrite for persistence
+        await sendMessageToAppwrite(currentUserId, userId, messageContent);
 
         // Optionally, add the message to local state immediately
         setMessages((prevMessages) => [
@@ -106,7 +152,7 @@ const Chat = () => {
           {
             senderId: currentUserId,
             content: messageContent,
-            timestamp: new Date(),
+            timestamp: timestamp,
             $id: `msg-${Date.now()}`, // Generate a unique ID or use server-generated IDs
           },
         ]);
@@ -141,47 +187,7 @@ const Chat = () => {
   };
 
 
-  useEffect(() => {
-    // Initialize Socket.io
-    socketRef.current = io(SOCKET_SERVER_URL, {
-      transports: ['websocket'], // Optional: specify transports
-    });
 
-    // Once socket is connected, emit 'join' event with currentUserId
-    if (currentUserId) {
-      socketRef.current.emit('join', currentUserId);
-    }
-
-    // Listen for incoming messages
-    socketRef.current.on('receiveMessage', (messageData: any) => {
-      setMessages((prevMessages) => [...prevMessages, {
-        senderId: messageData.senderId,
-        content: messageData.message,
-        timestamp: messageData.timestamp,
-        $id: `msg-${Date.now()}`, // Generate a unique ID or use server-generated IDs
-      }]);
-      scrollToBottom();
-    });
-
-    // Listen for typing indicators
-    socketRef.current.on('typing', (data: { senderId: string }) => {
-      if (data.senderId !== currentUserId) {
-        setIsTyping(true);
-        // Hide typing indicator after 3 seconds of inactivity
-        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = setTimeout(() => {
-          setIsTyping(false);
-        }, 3000);
-      }
-    });
-
-    // Cleanup on unmount
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-    };
-  }, [currentUserId]);
 
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
@@ -436,7 +442,6 @@ const Chat = () => {
             </small>
           </div>
         ))}
-
         {/* Typing Indicator */}
         {isTyping && (
           <div className="message-item m-2 text-left">
@@ -445,7 +450,6 @@ const Chat = () => {
             </div>
           </div>
         )}
-
         <div ref={messagesEndRef} />
       </div>
 
