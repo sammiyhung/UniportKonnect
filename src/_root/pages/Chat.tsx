@@ -8,7 +8,7 @@ import io, { Socket } from 'socket.io-client'; // Socket.io client
 import TypingIndicator from './TypingIndicator'; // Typing indicator component
 
 
-const SOCKET_SERVER_URL = import.meta.env.REACT_APP_SOCKET_SERVER_URL || 'http://localhost:5000'; // Your Socket.io server URL
+const SOCKET_SERVER_URL = import.meta.env.REACT_APP_SOCKET_SERVER_URL; // Your Socket.io server URL
 
 const Chat = () => {
   const { userId } = useParams(); 
