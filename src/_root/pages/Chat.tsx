@@ -8,7 +8,7 @@ import io, { Socket } from 'socket.io-client'; // Socket.io client
 import TypingIndicator from './TypingIndicator'; // Typing indicator component
 
 
-const SOCKET_SERVER_URL = import.meta.env.REACT_APP_SOCKET_SERVER_URL; // Your Socket.io server URL
+const SOCKET_SERVER_URL = import.meta.env.REACT_APP_SOCKET_SERVER_URL || 'https://uniportkonnect-server.onrender.com'; // Your Socket.io server URL
 
 const Chat = () => {
   const { userId } = useParams(); 
@@ -43,7 +43,6 @@ const Chat = () => {
     // Initialize Socket.io client
     socketRef.current = io(SOCKET_SERVER_URL, {
       transports: ['websocket', 'polling'], // Specify transports if needed
-      secure: true,
     });
 
     // Once socket is connected, emit 'join' event with currentUserId
