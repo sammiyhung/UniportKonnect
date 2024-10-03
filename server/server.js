@@ -6,7 +6,7 @@ const cors = require('cors');
 require('dotenv').config(); // Load environment variables
 
 // Appwrite SDK
-const { Client, Databases } = require('appwrite');
+const { Client, Databases, ID } = require('appwrite');
 
 // Initialize Express app
 const app = express();
@@ -65,7 +65,7 @@ io.on('connection', (socket) => {
       await databases.createDocument(
         process.env.APPWRITE_DATABASE_ID, // Your Appwrite Database ID
         process.env.APPWRITE_COLLECTION_ID, // Your Appwrite Collection ID (e.g., 'messages')
-        'unique()', // Auto-generated ID
+        ID.unique(), // Auto-generated ID
         {
           senderId,
           receiverId,
