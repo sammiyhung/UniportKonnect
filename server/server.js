@@ -65,7 +65,7 @@ io.on('connection', (socket) => {
       await databases.createDocument(
         process.env.APPWRITE_DATABASE_ID, // Your Appwrite Database ID
         process.env.APPWRITE_COLLECTION_ID, // Your Appwrite Collection ID (e.g., 'messages')
-        ID.unique(), // Auto-generated ID
+        'unique()', // Auto-generated ID
         {
           senderId,
           receiverId,
